@@ -50,7 +50,7 @@ namespace Function
 			var ms = Color.Matches(markdown);
 			foreach (Match m in ms)
 			{
-				var C = ColorTranslator.FromHtml(m.Value.Substring(0, 7));
+				var C =ColorTranslator.FromHtml(m.Value.Substring(0, 7));
 				int i = ColorList.IndexOf(C);
 				if (i < 0)
 				{
@@ -310,7 +310,6 @@ namespace Function
 		/// <summary>
 		/// Recursively handles inlines (bold, italic, underline, etc.) in a Markdig Inline container.
 		/// 爆改了，因为要处理表格，sorry, bro
-		/// 因为改成迭代器了，如果不遍历元素就会不执行。所以调用的地方不出意外要用xxx.Any()
 		/// </summary>
 		private static void ConvertInline(StringBuilder rtf, ContainerInline containerInline, string prefix = "")
 		{
@@ -372,15 +371,9 @@ namespace Function
 						else
 						{
 							if (ls.Count >= 3) DrawTable(rtf, ls);
-							else
+							else if(ls.Count>0)
 							{
 								DrawTable(rtf, ls);
-								//foreach (var a in ls)
-								//{
-								//	rtf.Append(EscapeRtf(a));
-								//	rtf.Append(@"\par \pard\sa180\fs20 ");//与调用这里的一致。
-								//}
-								//ls.Clear();
 								IgnoreNextLine = false;
 							}
 							rtf.Append(EscapeRtf(s));//把每一行显示出来
@@ -461,7 +454,7 @@ namespace Function
 		}
 
 		/// <summary>
-		/// 测量一段的宽度，注意需要用等宽字体。
+		/// 测量一段文字的宽度，注意需要用等宽字体。
 		/// </summary>
 		/// <param name="text"></param>
 		/// <returns></returns>

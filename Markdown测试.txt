@@ -1,0 +1,29 @@
+# Heading 1
+This is **bold**, *italic*, and __underline__ text.
+1. First item
+2. Second item
+- Bullet 1
+- Bullet 2
+
+#00FF00 颜色（New）
+
+**#FF7700 异常**
+
+# #00ff00 标题
+
+分割线（Markdig不支持）
+---
+
+代码段：（New）
+```
+private static void ConvertFencedCodeBlock(StringBuilder rtf, FencedCodeBlock block)
+{
+	rtf.Append(@"\pard\sa0\fs18 ");
+	rtf.AppendLine(@"\par");
+}
+```
+表格（New）
+| 表头1 | 表头2 | 表头3 |
+|-------|-------|-------|
+| 单元格1 | 单元格2 | 单元格3 |
+| 单元格4 | 单元格5 | 单元格6 |
