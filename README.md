@@ -1,26 +1,26 @@
 # MarkdownToRtf
-�������ѵ�������⣬���Ƿ�����.net 6.0�ģ��޷������ҵ���Ŀ�ϡ��ǳ���лGustavoHennig������ԭ��Ŀ���ӣ�https://github.com/GustavoHennig/MarkdownToRtf 
+在网上搜到了这个库，但是发现是.net 6.0的，无法用在我的项目上。非常感谢GustavoHennig。这是原项目链接：https://github.com/GustavoHennig/MarkdownToRtf 
 
-���ǽ�����һЩ�޸ģ�����MIT���ɣ���.net�汾�½�Ϊstandard2.0�����޿ɽ�����������ͬʱ����.net��.net framework��.net core���ˣ���֤ͨ���ԡ�
+于是进行了一些修改，保留MIT许可，将.net版本下降为standard2.0，降无可降，这样就能同时用在.net、.net framework、.net core上了，保证通用性。
 
-������һЩ���ܣ���Щ��ԭ��Ŀû�У�������ȴ��Ҫ�ġ�
+加入了一些功能，这些是原项目没有，但是我却需要的。
 
-ʹ��Ч�����£�����Winform��RichTextBox��չʾ������ʹ�õ��Ǹ�ɴ�Ⱦ���壬����Ӵֻ�Ӱ�����Ч�������±����޷����룩
+使用效果如下：（在Winform的RichTextBox中展示，字体使用的是更纱等距黑体，否则加粗会影响对齐效果，导致表格无法对齐）
 
-<img width="800" height="599" alt="΢��ͼƬ_2026-01-06_113959_677" src="https://github.com/user-attachments/assets/1fd36730-8a3b-4f39-9c6a-e2c2210cef52" />
+<img width="800" height="599" alt="微信图片_2026-01-06_113959_677" src="https://github.com/user-attachments/assets/1fd36730-8a3b-4f39-9c6a-e2c2210cef52" />
 
-��������ɫ���ƣ���ʽΪ��```#123456 ����```
- > ע�⣬��ɫ������Markdown�м��ݵ�```<font color=red>����</font>```��һ�£���Ϊ�о���ǩʶ��̫�鷳���ͼ���#FF0000������
+增加了颜色控制，格式为：```#123456 内容```
+ > 注意，颜色控制与Markdown中兼容的```<font color=red>内容</font>```不一致，因为感觉标签识别太麻烦，就简单用#FF0000处理了
 
-�����˴����չʾ����ʽΪ\`\`\`����\`\`\`
+增加了代码段展示，格式为\`\`\`内容\`\`\`
 
-�����˱�����ʾ�����ģ�����ʽΪ��
+增加了表格显示（核心），格式为：
 
-|����|����|...
+|内容|内容|...
 
 |---|----|...
 
-|����|����|...
+|内容|内容|...
 
 ......
-��˵�ⲻ����Markdown�Լ��ĸ�ʽ�𣬻��õ����ҽ�����
+话说这不都是Markdown自己的格式吗，还用得着我介绍吗（
