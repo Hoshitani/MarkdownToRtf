@@ -57,7 +57,7 @@ namespace Function
 					i = ColorList.Count;
 					ColorList.Add(C);
 				}
-				ColorDictionary.Add(m.Value, i);
+				if(!ColorDictionary.ContainsKey(m.Value))ColorDictionary.Add(m.Value, i);
 			}
 			if (ColorDictionary.Count > 0)
 			{
