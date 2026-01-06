@@ -10,7 +10,7 @@ namespace Function
 {
 	public static class MarkdownToRtfConverter
 	{
-		static Regex Color = new Regex("#[0-9A-Fa-f]{6}\\s");
+        static Regex Color = new Regex("#[0-9A-Fa-f]{6}\\s");
 		static Regex Table = new Regex("^(\\|.*\\|)$");
 		static Dictionary<string, int> ColorDictionary;//其实可能有多个string指向同一个索引。转换成Color会多一步，不如直接拿string映射。因为多对一，所以不得不用Dictionary
 		/// <summary>
@@ -22,13 +22,17 @@ namespace Function
 		{
 			return $"#{c.R:X2}{c.G:X2}{c.B:X2}";
 		}
+		static int BaseFontSize=20;
 		/// <summary>
 		/// Main entry point: converts Markdown text to RTF.
 		/// </summary>
 		/// <param name="markdown">A string containing Markdown markup.</param>
+		/// <param name="baseFontSize">基础字体大小，为pt数的两倍。</param>
+		/// <param name="FontColor">字体默认颜色，留空就是黑</param>
 		/// <returns>An RTF-formatted string.</returns>
-		public static string Convert(string markdown)
+		public static string Convert(string markdown,int baseFontSize=20,Color? FontColor= null)
 		{
+			BaseFontSize = baseFontSize;
 			// 1) Parse Markdown into a syntax tree
 			var pipeline = new MarkdownPipelineBuilder().Build();
 			var document = Markdig.Markdown.Parse(markdown, pipeline);
@@ -45,8 +49,16 @@ namespace Function
 			//制作颜色表
 			ColorDictionary = new Dictionary<string, int>();
 			List<Color> ColorList = new List<Color>();
-			ColorList.Add(System.Drawing.Color.Black);
-			ColorDictionary.Add("#000000 ", 0);
+			if (FontColor == null)
+			{
+				ColorList.Add(System.Drawing.Color.Black);
+				ColorDictionary.Add("#000000 ", 0);
+			}
+			else
+			{
+				ColorList.Add(FontColor.Value);
+				ColorDictionary.Add(ColorToHex(FontColor.Value) + " ", 0);
+			}
 			var ms = Color.Matches(markdown);
 			foreach (Match m in ms)
 			{
@@ -89,6 +101,34 @@ namespace Function
 			// Close the RTF document
 			rtfBuilder.AppendLine("}");
 
+			//还需要处理Emoji的代理对。
+			/*
+			高代理字符的编码值需要减去 0x10000，然后右移 10 位，加上 0xD800。
+			低代理字符的编码值需要与 0x3FF 进行按位与操作，然后加上 0xDC00
+			*/
+			for (int i = rtfBuilder.Length - 1; i >= 0; i--)
+			{
+				if (char.IsSurrogate(rtfBuilder[i]))
+				{
+					if (i >= 1)
+					{
+						if (char.IsHighSurrogate(rtfBuilder[i - 1]) && char.IsLowSurrogate(rtfBuilder[i]))
+						{
+							// 计算 RTF 格式的 Unicode 编码
+							int highSurrogateValue = rtfBuilder[i - 1];
+							int lowSurrogateValue = rtfBuilder[i];
+							rtfBuilder.Remove(i - 1, 2);
+							rtfBuilder.Insert(i - 1, $"\\u{highSurrogateValue}?\\u{lowSurrogateValue}?");
+							//这里其实取巧了。遇到的微笑【😊】在rtf中显示是\u-10179?\u-8700?，但还好RTF也认\u55357?\u56842?
+							i--; // 跳过低代理字符
+						}
+					}
+					else
+					{
+						throw new Exception("一位的代理？");
+					}
+				}
+			}
 			return rtfBuilder.ToString();
 		}
 
@@ -105,7 +145,7 @@ namespace Function
 			// Get a font size for the heading level, clamp if needed
 			int fontSize = headingSizes[Math.Min(headingLevel, headingSizes.Length) - 1];
 
-			rtf.Append($@"\pard\sa180\fs{fontSize} \b ");
+			rtf.Append($@"\pard\sa180\fs{(int)(fontSize/20.0* BaseFontSize)} \b ");
 			// Heading text:
 			ConvertInline(rtf, headingBlock.Inline);
 			// End bold, new line
@@ -117,7 +157,7 @@ namespace Function
 		/// </summary>
 		private static void ConvertParagraphBlock(StringBuilder rtf, ParagraphBlock paragraphBlock)
 		{
-			rtf.Append(@"\pard\sa180\fs20 ");// \sa指段落间距，单位都是半磅，1/20的磅。 \fs指字体大小，不过转换成pt需要/2。
+			rtf.Append($@"\pard\sa180\fs{BaseFontSize} ");// \sa指段落间距，单位都是半磅，1/20的磅。 \fs指字体大小，不过转换成pt需要/2。
 											 // Convert inlines inside this paragraph
 			ConvertInline(rtf, paragraphBlock.Inline);
 			// End paragraph
@@ -141,7 +181,7 @@ namespace Function
 						? $"{listItemBlock.Order}. "   // e.g., "1. ", "2. ", etc.
 						: @"\bullet ";                // or just a bullet symbol, e.g. \bullet
 
-					rtf.Append(@"\pard\sa100\fs20 ");
+					rtf.Append($@"\pard\sa100\fs{BaseFontSize} ");
 					rtf.Append(prefix);
 					//rtf.Append(" ");
 
@@ -179,7 +219,7 @@ namespace Function
 		/// </summary>
 		private static void ConvertFencedCodeBlock(StringBuilder rtf, FencedCodeBlock block)
 		{
-			rtf.Append(@"\pard\sa0\fs18 ");// \sa指段落间距，单位都是半磅，1/20的磅。 \fs指字体大小，不过转换成pt需要/2。
+			rtf.Append($@"\pard\sa0\fs{BaseFontSize*9/10} ");// \sa指段落间距，单位都是半磅，1/20的磅。 \fs指字体大小，不过转换成pt需要/2。
 			foreach (var a in block.Lines)
 			{
 				rtf.AppendLine(EscapeRtf(a.ToString()) + "\\line");//这个EscapeRtf真好啊，帮大忙了
@@ -234,7 +274,7 @@ namespace Function
 			{
 				if (subBlock is ParagraphBlock paragraph)
 				{
-					rtf.Append(@"\pard\li300\sa180\fs20 ");
+					rtf.Append($@"\pard\li300\sa180\fs{BaseFontSize} ");
 					ConvertInline(rtf, paragraph.Inline);
 					rtf.AppendLine(@"\par");
 				}
@@ -302,7 +342,7 @@ namespace Function
 				foreach (var a in ls)
 				{
 					rtf.Append(EscapeRtf(a));
-					rtf.Append(@"\par \pard\sa180\fs20 ");//与调用这里的一致。
+					rtf.Append($@"\par \pard\sa180\fs{BaseFontSize} ");//与调用这里的一致。
 				}
 			}
 			ls.Clear();
