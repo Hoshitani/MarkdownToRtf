@@ -293,25 +293,30 @@ namespace Function
 					ls.RemoveAt(1);
 					//开始绘制
 					List<int> Max = new List<int>();
+					List<string[]> SSS = new List<string[]>();
 					foreach (var s in ls)
 					{
 						var ss = s.Substring(1, s.Length - 2).Split('|');
 						for (int i = 0; i < ss.Length; i++) ss[i] = ss[i].Trim();
-						if (Max.Count == 0) for (int i = 0; i < ss.Length; i++) Max.Add(MeasureConsoleStringWidth(ss[i]));
-						else for (int i = 0; i < ss.Length; i++) if (Max[i] < MeasureConsoleStringWidth(ss[i])) Max[i] = MeasureConsoleStringWidth(ss[i]);
+						SSS.Add(ss);
+						//if (Max.Count == 0) for (int i = 0; i < ss.Length; i++) Max.Add(MeasureConsoleStringWidth(ss[i]));
+						for (int i = 0; i < ss.Length; i++)
+						{
+							var l = MeasureConsoleStringWidth(ss[i]);
+							if (Max.Count < ss.Length) Max.Add(l);
+							else if (Max[i] < l) Max[i] =l;
+						}
 						//需要字符串测量函数
 					}
 					//得到了每列的最大宽度
 					bool First = true;
-					foreach (var s in ls)
+					foreach (var ss in SSS)
 					{
-						rtf.Append("\\pard");
+						rtf.Append("\\pard ");
 						if (First)
 						{
 							rtf.Append("\\b ");//加粗
 						}
-						var ss = s.Substring(1, s.Length - 2).Split('|');
-						for (int i = 0; i < ss.Length; i++) ss[i] = ss[i].Trim();
 						for (int i = 0; i < ss.Length; i++)
 						{
 							rtf.Append(ss[i]);
@@ -519,7 +524,7 @@ namespace Function
 					width += 1; // 假设占用 1 个字符宽度
 					i++;
 				}
-				else if (char.GetUnicodeCategory(c).ToString().StartsWith("Other"))
+				else if (char.GetUnicodeCategory(c).ToString().StartsWith("Other")&&c>256)//:也被算进去了
 				{
 					// 汉字等宽字符
 					width += 2;
