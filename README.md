@@ -1,4 +1,4 @@
-# Markdown2Rtf
+# MarkdownToRtf
 在网上搜到了这个库，但是发现是.net 6.0的，无法用在我的项目上。非常感谢GustavoHennig。这是原项目链接：https://github.com/GustavoHennig/MarkdownToRtf 
 
 于是进行了一些修改，保留MIT许可，将.net版本下降为standard2.0，降无可降，这样就能同时用在.net .net framework，以及.net core上了，保证通用性。
