@@ -93,6 +93,8 @@ namespace Function
 			}
 			rtfBuilder.Append("\\cf0");
 			// 3) Walk the document blocks
+			Layer = -1;//用于处理嵌套的ListBlock
+			NeedPar = false;
 			foreach (var block in document)
 			{
 				ConvertBlock(rtfBuilder, block);
@@ -163,6 +165,7 @@ namespace Function
 			// End paragraph
 			rtf.AppendLine(@"\par");
 		}
+		static bool NeedPar = false;
 
 		/// <summary>
 		/// Handles Markdown lists (ordered or unordered).
@@ -170,18 +173,21 @@ namespace Function
 		private static void ConvertListBlock(StringBuilder rtf, ListBlock listBlock)
 		{
 			bool isOrdered = listBlock.IsOrdered;
-
+			if (Layer >= 0) rtf.AppendLine(@"\par");
+			Layer++;
 			foreach (var item in listBlock)
 			{
 				// Each list item is itself a ListItemBlock containing sub-blocks.
 				if (item is ListItemBlock listItemBlock)
 				{
 					// Start the bullet or number
+					if (NeedPar)
+						rtf.AppendLine(@"\par");
 					string prefix = isOrdered
 						? $"{listItemBlock.Order}. "   // e.g., "1. ", "2. ", etc.
 						: @"\bullet ";                // or just a bullet symbol, e.g. \bullet
 
-					rtf.Append($@"\pard\sa100\fs{BaseFontSize} ");
+					rtf.Append($@"\pard\sa100\li{360*Layer}\fs{BaseFontSize} ");
 					rtf.Append(prefix);
 					//rtf.Append(" ");
 
@@ -191,9 +197,17 @@ namespace Function
 						switch (subBlock)
 						{
 							case ParagraphBlock subParagraph:
-								ConvertInline(rtf, subParagraph.Inline);
+								Console.WriteLine(new string('\t',Layer)+"ParagraphBlock");
+								ConvertInline(rtf, subParagraph.Inline);//相邻两个这个中间需要换行……
+								NeedPar = true;
 								break;
-
+							case ListBlock listBlock2:
+								Console.WriteLine(new string('\t', Layer) + "ListBlock");
+								NeedPar = false;
+								//这里缺少一个分行
+								//缺少缩进，也就是需要记录listBlock的嵌套深度。html代码本身没问题，需要看看/par加在什么地方。
+								ConvertBlock(rtf, listBlock2);//疑似套娃
+								break;
 							// Extend if you have nested lists, code, etc.
 							default:
 								break;
@@ -201,8 +215,16 @@ namespace Function
 					}
 
 					// End list item
-					rtf.AppendLine(@"\par");
+					//if(Layer==0)
 				}
+			}
+			//rtf.AppendLine(@"\par");
+
+			Layer--;
+			if (Layer < 0)
+			{
+				rtf.AppendLine(@"\par");
+				NeedPar = false;
 			}
 		}
 
@@ -226,7 +248,7 @@ namespace Function
 			}
 			rtf.AppendLine(@"\par");
 		}
-
+		static int Layer = 0;
 		/// <summary>
 		/// Dispatches block conversion so it can be called recursively.
 		/// </summary>
