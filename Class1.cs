@@ -6,12 +6,13 @@ using System.Drawing;
 using System.Text;
 using System.Text.RegularExpressions;
 using Markdig.Syntax.Inlines;
+using Markdig.Extensions.Tables;
 namespace Function
 {
 	public static class MarkdownToRtfConverter
 	{
-        static Regex Color = new Regex("#[0-9A-Fa-f]{6}\\s");
-		static Regex Table = new Regex("^(\\|.*\\|)$");
+		static Regex Color = new Regex("#[0-9A-Fa-f]{6}\\s");
+		//static Regex Table = new Regex("^(\\|.*\\|)$");
 		static Dictionary<string, int> ColorDictionary;//其实可能有多个string指向同一个索引。转换成Color会多一步，不如直接拿string映射。因为多对一，所以不得不用Dictionary
 		/// <summary>
 		/// 将Color转换为Hex颜色代码，这样就可以用于显示颜色了。
@@ -22,7 +23,7 @@ namespace Function
 		{
 			return $"#{c.R:X2}{c.G:X2}{c.B:X2}";
 		}
-		static int BaseFontSize=20;
+		static int BaseFontSize = 20;
 		/// <summary>
 		/// Main entry point: converts Markdown text to RTF.
 		/// </summary>
@@ -30,11 +31,12 @@ namespace Function
 		/// <param name="baseFontSize">基础字体大小，为pt数的两倍。</param>
 		/// <param name="FontColor">字体默认颜色，留空就是黑</param>
 		/// <returns>An RTF-formatted string.</returns>
-		public static string Convert(string markdown,int baseFontSize=20,Color? FontColor= null)
+		public static string Convert(string markdown, int baseFontSize = 20, Color? FontColor = null)
 		{
 			BaseFontSize = baseFontSize;
 			// 1) Parse Markdown into a syntax tree
-			var pipeline = new MarkdownPipelineBuilder().Build();
+			var pipeline = new MarkdownPipelineBuilder().UsePipeTables().Build();// 启用表格扩展
+
 			var document = Markdig.Markdown.Parse(markdown, pipeline);
 
 			// 2) Start building the RTF string
@@ -62,14 +64,14 @@ namespace Function
 			var ms = Color.Matches(markdown);
 			foreach (Match m in ms)
 			{
-				var C =ColorTranslator.FromHtml(m.Value.Substring(0, 7));
+				var C = ColorTranslator.FromHtml(m.Value.Substring(0, 7));
 				int i = ColorList.IndexOf(C);
 				if (i < 0)
 				{
 					i = ColorList.Count;
 					ColorList.Add(C);
 				}
-				if(!ColorDictionary.ContainsKey(m.Value))ColorDictionary.Add(m.Value, i);
+				if (!ColorDictionary.ContainsKey(m.Value)) ColorDictionary.Add(m.Value, i);
 			}
 			if (ColorDictionary.Count > 0)
 			{
@@ -147,7 +149,7 @@ namespace Function
 			// Get a font size for the heading level, clamp if needed
 			int fontSize = headingSizes[Math.Min(headingLevel, headingSizes.Length) - 1];
 
-			rtf.Append($@"\pard\sa180\fs{(int)(fontSize/20.0* BaseFontSize)} \b ");
+			rtf.Append($@"\pard\sa180\fs{(int)(fontSize / 20.0 * BaseFontSize)} \b ");
 			// Heading text:
 			ConvertInline(rtf, headingBlock.Inline);
 			// End bold, new line
@@ -160,7 +162,7 @@ namespace Function
 		private static void ConvertParagraphBlock(StringBuilder rtf, ParagraphBlock paragraphBlock)
 		{
 			rtf.Append($@"\pard\sa180\fs{BaseFontSize} ");// \sa指段落间距，单位都是半磅，1/20的磅。 \fs指字体大小，不过转换成pt需要/2。
-											 // Convert inlines inside this paragraph
+														  // Convert inlines inside this paragraph
 			ConvertInline(rtf, paragraphBlock.Inline);
 			// End paragraph
 			rtf.AppendLine(@"\par");
@@ -187,7 +189,7 @@ namespace Function
 						? $"{listItemBlock.Order}. "   // e.g., "1. ", "2. ", etc.
 						: @"\bullet ";                // or just a bullet symbol, e.g. \bullet
 
-					rtf.Append($@"\pard\sa100\li{360*Layer}\fs{BaseFontSize} ");
+					rtf.Append($@"\pard\sa100\li{360 * Layer}\fs{BaseFontSize} ");
 					rtf.Append(prefix);
 					//rtf.Append(" ");
 
@@ -197,7 +199,7 @@ namespace Function
 						switch (subBlock)
 						{
 							case ParagraphBlock subParagraph:
-								Console.WriteLine(new string('\t',Layer)+"ParagraphBlock");
+								Console.WriteLine(new string('\t', Layer) + "ParagraphBlock");
 								ConvertInline(rtf, subParagraph.Inline);//相邻两个这个中间需要换行……
 								NeedPar = true;
 								break;
@@ -241,7 +243,7 @@ namespace Function
 		/// </summary>
 		private static void ConvertFencedCodeBlock(StringBuilder rtf, FencedCodeBlock block)
 		{
-			rtf.Append($@"\pard\sa0\fs{BaseFontSize*9/10} ");// \sa指段落间距，单位都是半磅，1/20的磅。 \fs指字体大小，不过转换成pt需要/2。
+			rtf.Append($@"\pard\sa0\fs{BaseFontSize * 9 / 10} ");// \sa指段落间距，单位都是半磅，1/20的磅。 \fs指字体大小，不过转换成pt需要/2。
 			foreach (var a in block.Lines)
 			{
 				rtf.AppendLine(EscapeRtf(a.ToString()) + "\\line");//这个EscapeRtf真好啊，帮大忙了
@@ -281,6 +283,58 @@ namespace Function
 						ConvertFencedCodeBlock(rtf, fencedCodeBlock);
 						break;
 					}
+				case Table Rows://什么嘛，原来Markdig支持表格
+					{
+						List<int> Max = new List<int>();
+						List<(string text, string rtf, int length)[]> SSS = new List<(string text, string rtf, int length)[]>();//记录每一格的文字长度、文字原始数据以及带格式数据（rtf）
+						for (int j = 0; j < Rows.Count; j++)//总感觉循环条件怪怪的。
+						{
+							var Columns = Rows[j] as TableRow;
+							if (Max.Count == 0) for (int i = 0; i < Columns.Count; i++) Max.Add(0);
+							(string text, string rtf, int length)[] ss = new (string text, string rtf, int length)[Columns.Count];
+							for (int k = 0; k < Columns.Count; k++)
+							{
+								var cell = (TableCell)Columns[k];
+								StringBuilder Text = new StringBuilder();//存放纯文本，用于计算每列的最大宽度
+								StringBuilder TempRtf = new StringBuilder();//存放带格式的文本
+								foreach (LeafBlock data in cell)//cell里会有多个data吗？
+								{
+									var containerInline = data.Inline;
+									var literalInline = containerInline.FirstChild as LiteralInline;
+									if (literalInline.NextSibling != null)
+									{
+										//可能有格式符
+										ConvertInline(TempRtf, containerInline, Text);
+										//需要得到文字宽度，计算每列的最大列宽
+									}
+									//要考虑格式符，.NextSibling 
+									else
+									{
+										Text.Append(literalInline.Content);
+									}
+								}
+								var l = MeasureConsoleStringWidth(Text.ToString());
+								ss[k] = (Text.ToString(), TempRtf.ToString(), l);
+								if (Max[k] < l)
+									Max[k] = l;
+							}
+							SSS.Add(ss);
+						}
+						//接下来是输出……
+						foreach (var ss in SSS)
+						{
+							rtf.Append("\\pard ");
+							for (int i = 0; i < ss.Length; i++)
+							{
+								string s;
+								if (string.IsNullOrEmpty(ss[i].rtf)) rtf.Append(s = ss[i].text);
+								else rtf.Append(s = ss[i].rtf);
+								rtf.Append(new string(' ', Max[i] - ss[i].length));
+							}
+							rtf.Append("\\par");
+						}
+						break;
+					}
 				default:
 					// Unhandled block type; extend as needed
 					break;
@@ -306,88 +360,19 @@ namespace Function
 				}
 			}
 		}
-		static void DrawTable(StringBuilder rtf, List<string> ls)
-		{
-			if (ls.Count >= 3)
-			{
-				if (Regex.IsMatch(ls[1], "^((\\|-+)+\\|)$")) //第二行是分割线
-				{
-					ls.RemoveAt(1);
-					//开始绘制
-					List<int> Max = new List<int>();
-					List<string[]> SSS = new List<string[]>();
-					foreach (var s in ls)
-					{
-						var ss = s.Substring(1, s.Length - 2).Split('|');
-						for (int i = 0; i < ss.Length; i++) ss[i] = ss[i].Trim();
-						SSS.Add(ss);
-						//if (Max.Count == 0) for (int i = 0; i < ss.Length; i++) Max.Add(MeasureConsoleStringWidth(ss[i]));
-						for (int i = 0; i < ss.Length; i++)
-						{
-							var l = MeasureConsoleStringWidth(ss[i]);
-							if (Max.Count < ss.Length) Max.Add(l);
-							else if (Max[i] < l) Max[i] =l;
-						}
-						//需要字符串测量函数
-					}
-					//得到了每列的最大宽度
-					bool First = true;
-					foreach (var ss in SSS)
-					{
-						rtf.Append("\\pard ");
-						if (First)
-						{
-							rtf.Append("\\b ");//加粗
-						}
-						for (int i = 0; i < ss.Length; i++)
-						{
-							rtf.Append(ss[i]);
-							int l = MeasureConsoleStringWidth(ss[i]);
-							rtf.Append(new string(' ', Max[i] - l + 1));//多留一格
-						}
-						if (First)
-						{
-							First = false;
-							rtf.Append("\\b0 ");
-						}
-						rtf.Append("\\par");
-					}
-				}
-				//也许是分成两个表格了？
-				ls.RemoveAt(1);//去掉分割线那一行
-
-				//else if (TableMode.Count == 1)
-				//{
-				//	if (Regex.IsMatch(s, "^((\\|-+)+\\|)$"))
-				//	{
-				//		rtf.Append("");
-				//	}
-				//}
-			}
-			else
-			{
-				foreach (var a in ls)
-				{
-					rtf.Append(EscapeRtf(a));
-					rtf.Append($@"\par \pard\sa180\fs{BaseFontSize} ");//与调用这里的一致。
-				}
-			}
-			ls.Clear();
-		}
 		/// <summary>
 		/// Recursively handles inlines (bold, italic, underline, etc.) in a Markdig Inline container.
-		/// 爆改了，因为要处理表格，sorry, bro
 		/// </summary>
-		private static void ConvertInline(StringBuilder rtf, ContainerInline containerInline, string prefix = "")
+		private static void ConvertInline(StringBuilder rtf, ContainerInline containerInline, StringBuilder Text = null, string prefix = "")
 		{
-			List<string> ls = new List<string>();
+			//List<string> ls = new List<string>();
 			bool IgnoreNextLine = false;
 			foreach (var inline in containerInline)
 			{
 				switch (inline)
 				{
 					case EmphasisInline emphasisInline:
-						HandleEmphasis(rtf, emphasisInline);
+						HandleEmphasis(rtf, emphasisInline, Text);
 						break;
 
 					case LineBreakInline lineBreakInline:
@@ -422,7 +407,9 @@ namespace Function
 						break;
 
 					case LiteralInline literalInline://表格也要被归到这里了……硬写吧
+													 //rtf.Append(EscapeRtf(literalInline.Content.ToString()));//原始
 						var s = literalInline.Content.ToString();
+						if (Text != null) Text.Append(s);
 						bool HasColor = Color.IsMatch(s);
 						if (HasColor)
 						{
@@ -430,21 +417,12 @@ namespace Function
 							s = s.Remove(0, match.Value.Length);//#123456
 							rtf.Append($"\\cf{ColorDictionary[match.Value]} ");//This is \cf2 red \cf0 text.  
 						}
-						if (Table.IsMatch(s))
-						{
-							ls.Add(s);
-							IgnoreNextLine = true;
-						}
-						else
-						{
-							if (ls.Count >= 3) DrawTable(rtf, ls);
-							else if(ls.Count>0)
-							{
-								DrawTable(rtf, ls);
-								IgnoreNextLine = false;
-							}
-							rtf.Append(EscapeRtf(s));//把每一行显示出来
-						}
+						//当表格格式为| **abc** |时，s只是|。后续会进入emphasisInline，配置格式后再回到literalInline……这无疑是一个挑战。
+						//两种思路
+						//一种是提前把所有表格部分替换成特殊的标记，在程序里单独处理完毕后塞回来。
+						//另一种是检测|，以|作为表格一行的起点和分割。适用面更广，也更麻烦……
+						//然而MarkDig支持表格
+						rtf.Append(EscapeRtf(s));//把每一行显示出来
 						if (HasColor) rtf.Append($" \\cf0 ");//恢复原始颜色
 						break;
 					default:
@@ -452,15 +430,15 @@ namespace Function
 						break;
 				}
 			}
-			if (ls.Count > 0)
-				DrawTable(rtf, ls);
+			//if (ls.Count > 0)
+			//	DrawTable(rtf, ls);
 		}
 
 		/// <summary>
 		/// Handles emphasis inlines (e.g., *italic*, **bold**, ***bold+italic***, etc.).
 		/// We also interpret underscores as underline in this example.
 		/// </summary>
-		private static void HandleEmphasis(StringBuilder rtf, EmphasisInline emphasisInline)
+		private static void HandleEmphasis(StringBuilder rtf, EmphasisInline emphasisInline, StringBuilder Text = null)
 		{
 			// Markdig uses DelimiterChar = '*' for bold/italic, '_' is also possible
 			bool isItalic = (emphasisInline.DelimiterChar == '*' && emphasisInline.DelimiterCount == 1)
@@ -478,7 +456,7 @@ namespace Function
 			if (isUnderline) rtf.Append(@"\ul ");
 
 			// Recursively process the content inside the emphasis
-			ConvertInline(rtf, emphasisInline);
+			ConvertInline(rtf, emphasisInline, Text);
 
 			// End tags (reverse order)
 			if (isUnderline) rtf.Append(@" \ulnone ");
@@ -546,7 +524,7 @@ namespace Function
 					width += 1; // 假设占用 1 个字符宽度
 					i++;
 				}
-				else if (char.GetUnicodeCategory(c).ToString().StartsWith("Other")&&c>256)//:也被算进去了
+				else if (char.GetUnicodeCategory(c).ToString().StartsWith("Other") && c > 256)//:也被算进去了
 				{
 					// 汉字等宽字符
 					width += 2;
