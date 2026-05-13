@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Markdig.Syntax.Inlines;
 using Markdig.Extensions.Tables;
+using System.Linq;
 namespace Function
 {
 	public static class MarkdownToRtfConverter
@@ -15,7 +16,7 @@ namespace Function
 		//static Regex Table = new Regex("^(\\|.*\\|)$");
 		static Dictionary<string, int> ColorDictionary;//其实可能有多个string指向同一个索引。转换成Color会多一步，不如直接拿string映射。因为多对一，所以不得不用Dictionary
 		/// <summary>
-		/// 将Color转换为Hex颜色代码，这样就可以用于显示颜色了。
+		/// 将Color转换为Hex颜色代码，这样就可以用于显示颜色了。返回形如#012345的字符串
 		/// </summary>
 		/// <param name="c"></param>
 		/// <returns></returns>
@@ -285,54 +286,8 @@ namespace Function
 					}
 				case Table Rows://什么嘛，原来Markdig支持表格
 					{
-						List<int> Max = new List<int>();
-						List<(string text, string rtf, int length)[]> SSS = new List<(string text, string rtf, int length)[]>();//记录每一格的文字长度、文字原始数据以及带格式数据（rtf）
-						for (int j = 0; j < Rows.Count; j++)//总感觉循环条件怪怪的。
-						{
-							var Columns = Rows[j] as TableRow;
-							if (Max.Count == 0) for (int i = 0; i < Columns.Count; i++) Max.Add(0);
-							(string text, string rtf, int length)[] ss = new (string text, string rtf, int length)[Columns.Count];
-							for (int k = 0; k < Columns.Count; k++)
-							{
-								var cell = (TableCell)Columns[k];
-								StringBuilder Text = new StringBuilder();//存放纯文本，用于计算每列的最大宽度
-								StringBuilder TempRtf = new StringBuilder();//存放带格式的文本
-								foreach (LeafBlock data in cell)//cell里会有多个data吗？
-								{
-									var containerInline = data.Inline;
-									var literalInline = containerInline.FirstChild as LiteralInline;
-									if (literalInline.NextSibling != null)
-									{
-										//可能有格式符
-										ConvertInline(TempRtf, containerInline, Text);
-										//需要得到文字宽度，计算每列的最大列宽
-									}
-									//要考虑格式符，.NextSibling 
-									else
-									{
-										Text.Append(literalInline.Content);
-									}
-								}
-								var l = MeasureConsoleStringWidth(Text.ToString());
-								ss[k] = (Text.ToString(), TempRtf.ToString(), l);
-								if (Max[k] < l)
-									Max[k] = l;
-							}
-							SSS.Add(ss);
-						}
-						//接下来是输出……
-						foreach (var ss in SSS)
-						{
-							rtf.Append("\\pard ");
-							for (int i = 0; i < ss.Length; i++)
-							{
-								string s;
-								if (string.IsNullOrEmpty(ss[i].rtf)) rtf.Append(s = ss[i].text);
-								else rtf.Append(s = ss[i].rtf);
-								rtf.Append(new string(' ', Max[i] - ss[i].length));
-							}
-							rtf.Append("\\par");
-						}
+						ConvertTableBlock(rtf, Rows);
+						//ConvertTableBlockWithSpace(rtf, Rows);//旧的逻辑，用空格实现表格效果
 						break;
 					}
 				default:
@@ -340,7 +295,169 @@ namespace Function
 					break;
 			}
 		}
+		/// <summary>
+		/// 处理 Markdown 表格块，转换为 RTF 表格格式
+		/// </summary>
+		private static void ConvertTableBlock(StringBuilder rtf, Table table)
+		{
+			if (table.Count == 0) return;
 
+			// 第一步：解析所有单元格，计算每列最大宽度
+			var columnCount = (table[0] as TableRow)?.Count ?? 0;
+			if (columnCount == 0) return;
+
+			var columnMaxWidths = new int[columnCount];
+			var tableData = new List<List<(string plainText, string formattedRtf, int width)>>();
+
+			foreach (var row in table)
+			{
+				if (!(row is TableRow tableRow)) continue;
+
+				var rowData = new List<(string plainText, string formattedRtf, int width)>();
+
+				for (int colIndex = 0; colIndex < tableRow.Count; colIndex++)
+				{
+					if (!(tableRow[colIndex] is TableCell cell))
+					{
+						rowData.Add(("", "", 0));
+						continue;
+					}
+
+					// 提取单元格的纯文本和格式化 RTF
+					var plainText = new StringBuilder();
+					var formattedRtf = new StringBuilder();
+
+					foreach (var block in cell)
+					{
+						if (block is LeafBlock leafBlock && leafBlock.Inline != null)
+						{
+							// 同时收集纯文本（用于宽度计算）和格式化 RTF
+							ConvertInline(formattedRtf, leafBlock.Inline, plainText);
+						}
+					}
+
+					var text = plainText.ToString();
+					var rtfContent = formattedRtf.ToString();
+					var width = MeasureConsoleStringWidth(text);
+
+					// 更新列最大宽度
+					if (width > columnMaxWidths[colIndex])
+						columnMaxWidths[colIndex] = width;
+
+					rowData.Add((text, rtfContent, width));
+				}
+
+				tableData.Add(rowData);
+			}
+
+			// 第二步：输出 RTF 表格
+			// 计算每个单元格的宽度（以 twips 为单位，1 twip = 1/1440 英寸）
+			// 假设每个字符宽度约为 120 twips（可根据字体调整）
+			int charWidthInTwips = (int)(BaseFontSize * 10 * 0.6);//系数会因为字体而不同，就写0.6吧
+			var cellWidths = columnMaxWidths.Select(w => w * charWidthInTwips).ToArray();
+
+			rtf.Append("\\pard\\plain\\ql\\sa0\\sb0\n");
+			rtf.Append("\\trowd\n");
+
+			// 定义每个单元格的右边界位置
+			int currentPos = 0;
+			for (int i = 0; i < cellWidths.Length; i++)
+			{
+				currentPos += cellWidths[i]+ 30;//经过测试，应该是这个值……对于120的charWidthInTwips来说是30，也许改字体就不行了？注意加粗，加粗对新宋体来说会变宽导致换行。字体从20改到50后，空白过多了，也许不是charWidthInTwips/4。甚至不是30，应该是0.6的系数有问题。字体越大偏差越大，在80字号的时候，已经不是这里加点减点能解决的问题了。
+				rtf.Append($"\\cellx{currentPos}\n");
+			}
+
+			// 输出每一行
+			foreach (var rowData in tableData)
+			{
+				for (int colIndex = 0; colIndex < rowData.Count; colIndex++)
+				{
+					var cell = rowData[colIndex];
+					// 单元格内容
+					rtf.Append("\\intbl ");
+					rtf.Append($"\\fs{BaseFontSize} ");
+					// 添加格式化内容或纯文本
+					if (!string.IsNullOrEmpty(cell.formattedRtf))
+					{
+						rtf.Append(cell.formattedRtf);
+					}
+					else if (!string.IsNullOrEmpty(cell.plainText))
+					{
+						rtf.Append(EscapeRtf(cell.plainText));
+					}
+					// 填充空格以达到列宽（可选，RTF 表格会自动对齐）
+					//var padding = columnMaxWidths[colIndex] - cell.width;
+					//if (padding > 0) rtf.Append(new string(' ', padding));
+					rtf.Append("\\cell\n");
+				}
+				rtf.Append("\\row\n");
+			}
+
+			rtf.Append("\\pard\\sa180\n");
+		}
+		/// <summary>
+		/// 曾经想用空格来显示表格。
+		/// </summary>
+		/// <param name="rtf"></param>
+		/// <param name="Rows"></param>
+		private static void ConvertTableBlockWithSpace(StringBuilder rtf, Table Rows)
+		{
+			List<int> Max = new List<int>();
+			List<(string text, string rtf, int length)[]> SSS = new List<(string text, string rtf, int length)[]>();//记录每一格的文字长度、文字原始数据以及带格式数据（rtf）
+			for (int j = 0; j < Rows.Count; j++)//总感觉循环条件怪怪的。
+			{
+				var Columns = Rows[j] as TableRow;
+				if (Max.Count == 0) for (int i = 0; i < Columns.Count; i++) Max.Add(0);
+				(string text, string rtf, int length)[] ss = new (string text, string rtf, int length)[Columns.Count];
+				for (int k = 0; k < Columns.Count; k++)
+				{
+					var cell = (TableCell)Columns[k];
+					StringBuilder Text = new StringBuilder();//存放纯文本，用于计算每列的最大宽度
+					StringBuilder TempRtf = new StringBuilder();//存放带格式的文本
+					foreach (LeafBlock data in cell)//cell里会有多个data吗？
+					{
+						var containerInline = data.Inline;
+						var literalInline = containerInline.FirstChild as LiteralInline;
+						if (literalInline != null)
+						{
+							if (literalInline.NextSibling != null)
+							{
+								//可能有格式符
+								ConvertInline(TempRtf, containerInline, Text);
+								//需要得到文字宽度，计算每列的最大列宽
+							}
+							//要考虑格式符，.NextSibling 
+							else
+							{
+								Text.Append(literalInline.Content);
+							}
+						}
+						else
+						{
+
+						}
+					}
+					var l = MeasureConsoleStringWidth(Text.ToString());
+					ss[k] = (Text.ToString(), TempRtf.ToString(), l);
+					if (Max[k] < l)
+						Max[k] = l;
+				}
+				SSS.Add(ss);
+			}
+			//接下来是输出……
+			foreach (var ss in SSS)
+			{
+				rtf.Append("\\pard ");
+				for (int i = 0; i < ss.Length; i++)
+				{
+					string s;
+					if (string.IsNullOrEmpty(ss[i].rtf)) rtf.Append(s = ss[i].text);
+					else rtf.Append(s = ss[i].rtf);
+					rtf.Append(new string(' ', Max[i] - ss[i].length));
+				}
+				rtf.Append("\\par");
+			}
+		}
 		/// <summary>
 		/// Handles block quotes.
 		/// </summary>

@@ -27,5 +27,5 @@ private static void ConvertFencedCodeBlock(StringBuilder rtf, FencedCodeBlock bl
 表格（New）
 | 表头1 | 表头2 | 表头3 |
 |-------|-------|-------|
-| 单元格1 | 单元格2 | 单元格3 |
-| 单元格4 | 单元格5 | 单元格6 |
+| 单元格1 | *单元格2* | 单元格3 |
+| 单元格4 | 单元格5 | **单元格6** |
